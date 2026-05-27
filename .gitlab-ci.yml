@@ -53,12 +53,13 @@ sast-bandit:
 
 secrets-scan:
   stage: secrets
-  image: zricethezav/gitleaks:latest
+  image: python:3.12-slim
   before_script:
     - mkdir -p $REPORTS_DIR
+    - pip install --no-cache-dir detect-secrets
   script:
-    - gitleaks detect --source . --report-format json --report-path $REPORTS_DIR/gitleaks-report.json || true
-    - ls $REPORTS_DIR/ || true
+    - detect-secrets scan > $REPORTS_DIR/secrets-report.json || true
+    - echo "✅ Scan de secrets terminé"
   artifacts:
     when: always
     paths:
