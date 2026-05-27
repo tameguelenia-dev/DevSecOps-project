@@ -58,14 +58,17 @@ secrets-scan:
     - mkdir -p $REPORTS_DIR
   script:
     - gitleaks detect --source . --report-format json --report-path $REPORTS_DIR/gitleaks-report.json || true
+    - ls $REPORTS_DIR/ || true
   artifacts:
     when: always
     paths:
-      - $REPORTS_DIR/gitleaks-report.json
+      - $REPORTS_DIR/
     expire_in: 30 days
+  allow_failure: true
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
     - if: '$CI_COMMIT_BRANCH == "develop"'
+
 
 sca-safety:
   stage: sca
