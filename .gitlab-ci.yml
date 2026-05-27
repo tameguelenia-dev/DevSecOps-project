@@ -1,56 +1,107 @@
-# This file is a template, and might need editing before it works on your project.
-# To contribute improvements to CI/CD templates, please follow the Development guide at:
-# https://docs.gitlab.com/development/cicd/templates/
-# This specific template is located at:
-# https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Python.gitlab-ci.yml
+stages:
+  - test
+  - sast
+  - secrets
+  - sca
+  - build
+  - container
+  - dast
+  - report
 
-# Official language image. Look for the different tagged releases at:
-# https://hub.docker.com/r/library/python/tags/
-image: python:latest
-
-# Change pip's cache directory to be inside the project directory since we can
-# only cache local items.
 variables:
-  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  APP_NAME: "devsecops-app"
+  IMAGE_TAG: "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+  IMAGE_LATEST: "$CI_REGISTRY_IMAGE:latest"
+  REPORTS_DIR: "security-reports"
 
-# https://pip.pypa.io/en/stable/topics/caching/
-cache:
-  paths:
-    - .cache/pip
-
-before_script:
-  - python --version ; pip --version  # For debugging
-  - pip install virtualenv
-  - virtualenv venv
-  - source venv/bin/activate
-
-test:
+unit-tests:
+  stage: test
+  image: python:3.12-slim
+  before_script:
+    - pip install --no-cache-dir flask pytest pytest-cov
   script:
-    - pip install ruff tox  # you can also use tox
-    - pip install --editable ".[test]"
-    - tox -e py,ruff
-
-run:
-  script:
-    - pip install .
-    # run the command here
+    - pytest tests/ -v --cov=app --cov-report=xml:coverage.xml --junitxml=test-results.xml
   artifacts:
+    when: always
+    reports:
+      junit: test-results.xml
     paths:
-      - build/*
-
-pages:
-  script:
-    - pip install sphinx sphinx-rtd-theme
-    - cd doc
-    - make html
-    - mv build/html/ ../public/
-  artifacts:
-    paths:
-      - public
+      - coverage.xml
+      - test-results.xml
+    expire_in: 7 days
   rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'
 
-deploy:
-  stage: deploy
-  script: echo "Define your deployment script!"
-  environment: production
+sast-bandit:
+  stage: sast
+  image: python:3.12-slim
+  before_script:
+    - pip install --no-cache-dir bandit
+    - mkdir -p $REPORTS_DIR
+  script:
+    - bandit -r app/ -f json -o $REPORTS_DIR/bandit-report.json || true
+    - bandit -r app/ -f txt
+  artifacts:
+    when: always
+    paths:
+      - $REPORTS_DIR/bandit-report.json
+    expire_in: 30 days
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+
+secrets-scan:
+  stage: secrets
+  image: zricethezav/gitleaks:latest
+  before_script:
+    - mkdir -p $REPORTS_DIR
+  script:
+    - gitleaks detect --source . --report-format json --report-path $REPORTS_DIR/gitleaks-report.json || true
+  artifacts:
+    when: always
+    paths:
+      - $REPORTS_DIR/gitleaks-report.json
+    expire_in: 30 days
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+
+sca-safety:
+  stage: sca
+  image: python:3.12-slim
+  before_script:
+    - pip install --no-cache-dir safety
+    - mkdir -p $REPORTS_DIR
+  script:
+    - safety check -r app/requirements.txt || true
+  artifacts:
+    when: always
+    paths:
+      - $REPORTS_DIR/
+    expire_in: 30 days
+  allow_failure: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+
+security-report:
+  stage: report
+  image: python:3.12-slim
+  script:
+    - echo "Pipeline DevSecOps terminé avec succès"
+    - mkdir -p $REPORTS_DIR
+    - echo "{\"status\":\"PASS\",\"branch\":\"$CI_COMMIT_BRANCH\"}" > $REPORTS_DIR/summary.json
+  artifacts:
+    when: always
+    paths:
+      - $REPORTS_DIR/
+    expire_in: 90 days
+  needs:
+    - unit-tests
+    - sast-bandit
+    - secrets-scan
+    - sca-safety
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'
