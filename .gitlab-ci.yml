@@ -71,7 +71,7 @@ sast-sonarqube:
     - >
       if [ -z "$SONAR_TOKEN" ]; then
         echo "SONAR_TOKEN not set - SonarQube skipped";
-        echo '{"status":"skipped","reason":"SONAR_TOKEN not configured"}' > $REPORTS_DIR/sonarqube-report.json;
+        echo "{\"status\":\"skipped\",\"reason\":\"SONAR_TOKEN not configured\"}" > $REPORTS_DIR/sonarqube-report.json;
         exit 0;
       fi
     - sonar-scanner
