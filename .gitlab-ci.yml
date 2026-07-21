@@ -10,6 +10,7 @@ stages:
   - sca
   - build
   - dynamic-testing
+  - security-gate
   - report
 
 variables:
@@ -172,6 +173,111 @@ dast-owasp-zap:
     - if: '$CI_COMMIT_BRANCH == "main"'
     - if: '$CI_COMMIT_BRANCH == "develop"'
 
+# ─────────────────────────────────────────────────────────
+# SECURITY GATE — Zero Trust Enforcement
+# Never trust, always verify
+# Blocks deployment if critical vulnerabilities found
+# ─────────────────────────────────────────────────────────
+security-gate:
+  stage: security-gate
+  image: python:3.12-slim
+  before_script:
+    - mkdir -p $REPORTS_DIR
+  script:
+    - echo "▶ ZERO TRUST — Security Gate verification..."
+    - |
+      python3 << 'PYEOF'
+      import json
+      import os
+      import sys
+
+      reports_dir = os.environ.get('REPORTS_DIR', 'security-reports')
+
+      print("=" * 60)
+      print("  ZERO TRUST SECURITY GATE")
+      print("  Principle: Never trust, always verify")
+      print("  Checking all security scan results...")
+      print("=" * 60)
+
+      critical_issues = []
+      high_issues = []
+
+      # Check Bandit
+      bandit_path = f'{reports_dir}/bandit-report.json'
+      if os.path.exists(bandit_path):
+          with open(bandit_path) as f:
+              bandit = json.load(f)
+          for r in bandit.get('results', []):
+              if r.get('issue_severity') == 'CRITICAL':
+                  critical_issues.append(f"Bandit: {r.get('issue_text','')}")
+              elif r.get('issue_severity') == 'HIGH':
+                  high_issues.append(f"Bandit: {r.get('issue_text','')}")
+          print(f"  ✅ Bandit verified: {len(bandit.get('results',[]))} findings")
+
+      # Check Snyk
+      snyk_path = f'{reports_dir}/snyk-report.json'
+      if os.path.exists(snyk_path):
+          with open(snyk_path) as f:
+              snyk = json.load(f)
+          for v in snyk.get('vulnerabilities', []):
+              if v.get('severity') == 'critical':
+                  critical_issues.append(f"Snyk: {v.get('title','')}")
+              elif v.get('severity') == 'high':
+                  high_issues.append(f"Snyk: {v.get('title','')}")
+          print(f"  ✅ Snyk verified: {len(snyk.get('vulnerabilities',[]))} vulnerabilities")
+
+      # Check ZAP
+      zap_path = f'{reports_dir}/zap-report.json'
+      if os.path.exists(zap_path):
+          with open(zap_path) as f:
+              zap = json.load(f)
+          for alert in zap.get('alerts', []):
+              if alert.get('risk') == 'CRITICAL':
+                  critical_issues.append(f"ZAP: {alert.get('alert','')}")
+              elif alert.get('risk') == 'HIGH':
+                  high_issues.append(f"ZAP: {alert.get('alert','')}")
+          print(f"  ✅ ZAP verified: {len(zap.get('alerts',[]))} alerts")
+
+      print("=" * 60)
+
+      if critical_issues:
+          print("  ❌ ZERO TRUST — ACCESS DENIED")
+          print("  SECURITY GATE BLOCKED — Critical vulnerabilities found:")
+          for issue in critical_issues:
+              print(f"  → {issue}")
+          print("  Deployment to production is BLOCKED")
+          print("  Fix all critical issues before deploying")
+          print("=" * 60)
+          sys.exit(1)
+      elif high_issues:
+          print("  ⚠️  ZERO TRUST — WARNING")
+          print(f"  {len(high_issues)} HIGH severity issues found:")
+          for issue in high_issues:
+              print(f"  → {issue}")
+          print("  Deployment ALLOWED but review recommended")
+          print("=" * 60)
+      else:
+          print("  ✅ ZERO TRUST — ACCESS GRANTED")
+          print("  SECURITY GATE PASSED")
+          print("  No critical or high vulnerabilities detected")
+          print("  Code verified — deployment to production ALLOWED")
+          print("=" * 60)
+      PYEOF
+    - echo "✅ Security Gate completed"
+  needs:
+    - sast-bandit
+    - secrets-scan
+    - sca-snyk
+    - dast-owasp-zap
+  artifacts:
+    when: always
+    paths:
+      - $REPORTS_DIR/
+    expire_in: 30 days
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+
 security-report:
   stage: report
   image: python:3.12-slim
@@ -193,6 +299,7 @@ security-report:
     - secrets-scan
     - sca-snyk
     - dast-owasp-zap
+    - security-gate
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
     - if: '$CI_COMMIT_BRANCH == "develop"'
