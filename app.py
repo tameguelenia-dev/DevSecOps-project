@@ -59,5 +59,5 @@ def secure_data():
     return jsonify({"data": "Ceci est une donnée sécurisée", "level": "confidential"}), 200
 
 if __name__ == '__main__':
-    debug_mode = os.environ.get('FLASK_ENV') == 'development'
-    app.run(host='0.0.0.0', port=5000, debug=debug_mode)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
