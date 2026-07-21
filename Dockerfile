@@ -8,6 +8,7 @@ COPY app/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ .
+COPY templates/ ./templates/
 
 RUN chown -R appuser:appgroup /app
 
