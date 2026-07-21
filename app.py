@@ -17,7 +17,7 @@ USERS = {
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return jsonify({"message": "DevSecOps API is running", "status": "healthy"})
 
 @app.route('/api/health', methods=['GET'])
 def health():
