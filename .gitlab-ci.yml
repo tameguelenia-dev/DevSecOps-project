@@ -9,7 +9,7 @@ stages:
   - secrets
   - sca
   - build
-  - dynamic testing
+  - dynamic-testing
   - report
 
 variables:
